@@ -1,0 +1,102 @@
+#####################################################################
+###         Ansible Playbook to Patch RHEL Based Servers         ####
+###                      U S A G E                               ####
+###  ansible-playbook playbook.yml -e target=wk1 -u username -kK ####
+#####################################################################
+
+---
+- name: Patch Linux Servers 
+  hosts: "{{ target }}" 
+  vars_prompt:
+    - name: required_pkgs
+      prompt: list of packages to be updated 
+      private: no
+
+    - name: reboot_timeout
+      prompt: Reboot Time Out Duration
+      default: 300
+      private: no
+
+    - name: patch_type
+      prompt: Specify type of Patch to apply using all, security, bugfix or supplied 
+      default: all
+      private: no
+
+    - name: auto_reboot
+      prompt: should the server be rebooted ?
+      default: yes
+      private: no
+
+    - name: chk_mode
+      prompt: Should playbook be executed in check mode ?
+      default: no
+      private: no
+
+    - name: xclude_pkgs
+      prompt: List of packages to be exclude during patching
+      default: gitlab-ce
+      private: no
+
+  tasks: 
+    - name: Ensure yum_utils is installed 
+      yum:
+        name: yum-utils 
+        state: latest
+
+    - name: Update all packages
+      yum:
+        name: "*"
+        state: latest
+        exclude: "{{ xclude_pkgs | default(omit) }}"
+      check_mode: "{{ chk_mode }}"
+      when: ( patch_type == "all" and  required_pkgs =="" )
+
+    - name: Apply security patches only
+      yum:
+        name: "*"
+        security: true
+        state: latest
+        exclude: "{{ xclude_pkgs | default(omit) }}"
+      check_mode: "{{ chk_mode }}"
+      when: patch_type == "security"
+
+    - name: Patch only supplied packages 
+      yum:
+        name: "{{ required_pkgs }}"
+        state: latest
+        exclude: "{{ xclude_pkgs | default(omit) }}"
+      check_mode: "{{ chk_mode }}"
+      when: ( patch_type == "supplied" and required_pkgs !="" )
+
+    - name: Apply bugfix patches only
+      yum:
+        name: "*"
+        bugfix: true
+        state: latest
+        exclude: "{{ xclude_pkgs | default(omit) }}"
+      check_mode: "{{ chk_mode }}"
+      when: patch_type == "bugfix"
+
+    - name: Verify if restart is required
+      ansible.builtin.shell:
+        cmd: needs-restarting --reboothint
+      register: reboot
+      failed_when: reboot.rc > 1
+
+    - name: Print Reboot Message
+      ansible.builtin.debug:
+        msg: "Reboot is required after patching."
+      when: reboot.rc == 1
+
+    - name: Reboot host
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ reboot_timeout }}"
+      check_mode: "{{ chk_mode }}"
+      when: auto_reboot | bool and reboot.rc == 1
+      notify: mount_dags
+
+
+  handlers:
+    - name: mount_dags
+      shell: mount /home/test44/ /home/test77
+      when: "airflow in {{ ansible_hostname}}"
