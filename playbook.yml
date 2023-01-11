@@ -98,5 +98,5 @@
 
   handlers:
     - name: mount_dags
-      shell: mount /home/test44/ /home/test77
+      shell: mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport fs-edbabbec.efs.us-gov-west-1.amazonaws.com:/ /opt/airflow/dags/
       when: "airflow in {{ ansible_hostname}}"
