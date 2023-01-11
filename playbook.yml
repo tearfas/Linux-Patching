@@ -93,10 +93,39 @@
         reboot_timeout: "{{ reboot_timeout }}"
       check_mode: "{{ chk_mode }}"
       when: auto_reboot | bool and reboot.rc == 1
-      notify: mount_dags
+      notify: 
+        - mount_dags
+        - restart_postfix_dpm
+        - restart_transformer 
+        - restart_sdc 
 
 
   handlers:
     - name: mount_dags
       shell: mount /home/test44/ /home/test77
       when: "airflow in {{ ansible_hostname}}"
+
+    - name: restart_sdc
+      service:
+         name: sdc
+         state: restarted
+         enabled: yes
+      when: "sdc in {{ ansible_hostname}}"
+
+    - name: restart_postfix_dpm
+      service:
+         name: "{{ item }}"
+         state: restarted
+         enabled: yes
+      when: "stm or sdc in {{ ansible_hostname}}"
+      loop:
+        - postfix 
+        - dpm 
+  
+    - name: restart_tranformer
+      service:
+         name: transformer 
+         state: restarted
+         enabled: yes
+      when: "stm in {{ ansible_hostname}}"
+  
