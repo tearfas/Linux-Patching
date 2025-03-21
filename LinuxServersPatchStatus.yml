@@ -1,0 +1,66 @@
+---
+- name: Check Linux Servers For Available Patches
+  hosts: "{{ target }}"
+  serial: 1
+  gather_facts: no
+  tasks:
+    - name: Check for Patches and Enter Output in File
+      block:
+        - name: Manually Gather Facts
+          setup:
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+        - name: Check For Available Updates
+          yum:
+            list: updates
+          register: pending_updates
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+        - name: Create a variable to hold list of patches
+          set_fact:
+            patch_list: "{{ pending_updates.results | map(attribute='name') | list }}"
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+        - name: Determine If Kernel Update Is Available
+          set_fact:
+            needs_patching: "{{ patch_list | length > 0 }}"
+            kernel_update: "{{ 'kernel' in patch_list | join(' ') }}"
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+        - name: Generate Timestamp For Filename
+          set_fact:
+            timestamp: "{{ lookup('pipe', 'date +%b%d') }}"
+
+        - name: Append Server Patch Status To A Local File
+          delegate_to: localhost
+          lineinfile:
+            path: "/tmp/LinuxPatchStatus_{{ timestamp }}.txt"
+            line: "{{ inventory_hostname }}: needs_patching: {{ needs_patching }}, reboot_required: {{ kernel_update }}"
+            create: yes
+            state: present
+          when: patch_list != ""
+          ignore_errors: yes
+          ignore_unreachable: yes
+
+      rescue:
+        - name: Handle failures gracefully
+          debug:
+            msg: "A task failed, but the playbook is continuing."
+
+- name: Upload Output File to S3
+  hosts: localhost
+  tasks:
+    - name: Generate Timestamp For Filename
+      set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%b%d') }}"
+
+    - name: Put Output File in s3
+      aws_s3:
+        bucket: test
+        src: "/tmp/LinuxPatchStatus_{{ timestamp }}.txt"
+        object: "infra-team/Weekly_Linux_PatchStatus/LinuxPatchStatus_{{ timestamp }}.txt"
+        mode: put
