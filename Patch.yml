@@ -1,0 +1,31 @@
+---
+- name: Check and apply Linux patches
+  hosts: all
+  become: yes
+  tasks:
+    - name: Check if the server is patchable
+      ansible.builtin.set_fact:
+        is_patchable: "{{ inventory_hostname in groups['patchable'] }}"
+
+    - name: Check if updates are available
+      ansible.builtin.command: yum check-update
+      register: patch_check
+      ignore_errors: yes
+      changed_when: false
+      when: is_patchable
+
+    - name: Determine if a kernel update is included
+      ansible.builtin.set_fact:
+        reboot_required: "{{ 'kernel' in patch_check.stdout }}"
+      when: is_patchable
+
+    - name: Apply updates
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+      when: is_patchable and patch_check.stdout != ""
+
+    - name: Reboot if kernel update is present and server is in rebootable group
+      ansible.builtin.reboot:
+        msg: "Rebooting due to kernel update"
+      when: is_patchable and reboot_required and inventory_hostname in groups['rebootable']
